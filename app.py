@@ -155,4 +155,4 @@ else:
         if st.button("🗑️ Eliminar servicio"):
             delete_appointment(selected_id)
             st.warning("Servicio eliminado.")
-            st.experimental_rerun()
+            st.rerun()
