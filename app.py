@@ -61,7 +61,7 @@ with st.form("nuevo_servicio", clear_on_submit=True):
                 notes=notes,
             )
             st.success("✅ Servicio guardado en la agenda.")
-            st.experimental_rerun()
+            st.rerun()
 
 
 # =========================
@@ -147,7 +147,7 @@ else:
         if st.button("Actualizar estado"):
             update_status(selected_id, new_status)
             st.success("✅ Estado actualizado.")
-            st.experimental_rerun()
+            st.rerun()
 
     with col_b:
         st.write("")
