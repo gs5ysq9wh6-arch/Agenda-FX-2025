@@ -4,181 +4,108 @@ from datetime import datetime
 DB_NAME = "agenda.db"
 
 
-def get_connection():
+def sql():
     conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row  # para acceder columnas por nombre
+    conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
-    conn = get_connection()
-    cur = conn.cursor()
+    conn = sql()
+    c = conn.cursor()
 
-    # Tabla de servicios (ya existente)
-    cur.execute(
-        """
+    c.execute("""
         CREATE TABLE IF NOT EXISTS appointments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            client_name TEXT NOT NULL,
+            client_name TEXT,
             service_type TEXT,
             pest_type TEXT,
             address TEXT,
             zone TEXT,
             phone TEXT,
-            date TEXT NOT NULL,
-            time TEXT NOT NULL,
+            date TEXT,
+            time TEXT,
             price REAL,
-            status TEXT DEFAULT 'Pendiente',
+            status TEXT,
             notes TEXT,
             created_at TEXT
         );
-        """
-    )
+    """)
 
-    # NUEVA tabla de clientes
-    cur.execute(
-        """
+    c.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
+            name TEXT,
             business_name TEXT,
             address TEXT,
             zone TEXT,
             phone TEXT,
             notes TEXT
         );
-        """
-    )
+    """)
 
     conn.commit()
     conn.close()
 
 
-# ------------------------
-# SERVICIOS (APPOINTMENTS)
-# ------------------------
+# --------- APPOINTMENTS ---------
 
-def add_appointment(
-    client_name,
-    service_type,
-    pest_type,
-    address,
-    zone,
-    phone,
-    date,
-    time,
-    price,
-    status,
-    notes,
-):
-    conn = get_connection()
-    cur = conn.cursor()
-    created_at = datetime.now().isoformat(timespec="seconds")
-    cur.execute(
-        """
+def add_appointment(n, s, p, a, z, t, d, h, pr, st, no):
+    conn = sql()
+    c = conn.cursor()
+    c.execute("""
         INSERT INTO appointments (
-            client_name, service_type, pest_type,
-            address, zone, phone,
-            date, time, price,
-            status, notes, created_at
+            client_name, service_type, pest_type, address, zone, phone,
+            date, time, price, status, notes, created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            client_name,
-            service_type,
-            pest_type,
-            address,
-            zone,
-            phone,
-            date,
-            time,
-            price,
-            status,
-            notes,
-            created_at,
-        ),
-    )
+    """, (n, s, p, a, z, t, d, h, pr, st, no, datetime.now().isoformat()))
     conn.commit()
     conn.close()
 
 
-def get_appointments(date_from=None, date_to=None, status=None):
-    conn = get_connection()
-    cur = conn.cursor()
-
-    query = "SELECT * FROM appointments WHERE 1=1"
-    params = []
-
-    if date_from:
-        query += " AND date >= ?"
-        params.append(date_from)
-
-    if date_to:
-        query += " AND date <= ?"
-        params.append(date_to)
-
-    if status and status != "Todos":
-        query += " AND status = ?"
-        params.append(status)
-
-    query += " ORDER BY date, time"
-
-    cur.execute(query, params)
-    rows = cur.fetchall()
+def get_appointments():
+    conn = sql()
+    rows = conn.execute("SELECT * FROM appointments ORDER BY date, time").fetchall()
     conn.close()
     return rows
 
 
-def update_status(appointment_id, new_status):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE appointments SET status = ? WHERE id = ?",
-        (new_status, appointment_id),
-    )
+def update_status(id_, st):
+    conn = sql()
+    conn.execute("UPDATE appointments SET status=? WHERE id=?", (st, id_))
     conn.commit()
     conn.close()
 
 
-def delete_appointment(appointment_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM appointments WHERE id = ?", (appointment_id,))
+def delete_appointment(id_):
+    conn = sql()
+    conn.execute("DELETE FROM appointments WHERE id=?", (id_,))
     conn.commit()
     conn.close()
 
 
-# ------------------------
-# CLIENTES
-# ------------------------
+# --------- CLIENTES ---------
 
-def add_client(name, business_name, address, zone, phone, notes):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        """
+def add_client(n, b, a, z, t, no):
+    conn = sql()
+    conn.execute("""
         INSERT INTO clients (name, business_name, address, zone, phone, notes)
         VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (name, business_name, address, zone, phone, notes),
-    )
+    """, (n, b, a, z, t, no))
     conn.commit()
     conn.close()
 
 
 def get_clients():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM clients ORDER BY name;")
-    rows = cur.fetchall()
+    conn = sql()
+    rows = conn.execute("SELECT * FROM clients ORDER BY name").fetchall()
     conn.close()
     return rows
 
 
-def delete_client(client_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM clients WHERE id = ?;", (client_id,))
+def delete_client(id_):
+    conn = sql()
+    conn.execute("DELETE FROM clients WHERE id=?", (id_,))
     conn.commit()
     conn.close()
