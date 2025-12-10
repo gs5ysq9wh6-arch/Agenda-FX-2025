@@ -19,7 +19,7 @@ def init_db():
     conn = get_conn()
     c = conn.cursor()
 
-    # Tabla de clientes (dejamos is_monthly/monthly_day aunque casi no se usen)
+    # Tabla de clientes
     c.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,6 +107,15 @@ def update_client(client_id, name, business_name, address, zone, phone, notes):
         notes,
         client_id,
     ))
+    conn.commit()
+    conn.close()
+
+
+def delete_client(client_id):
+    """Elimina un cliente de la tabla clients."""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM clients WHERE id = ?", (client_id,))
     conn.commit()
     conn.close()
 
@@ -260,6 +269,12 @@ st.title("📅 Agenda Fumigaciones Xterminio")
 
 hoy = date.today()
 dia_hoy = hoy.day
+
+# Session state para ediciones
+if "cliente_edit_id" not in st.session_state:
+    st.session_state["cliente_edit_id"] = None
+if "servicio_edit_id" not in st.session_state:
+    st.session_state["servicio_edit_id"] = None
 
 # =========================
 # CARGAR CLIENTES
@@ -463,142 +478,175 @@ else:
     st.dataframe(data, use_container_width=True)
 
     st.markdown("---")
-    st.subheader("Actualizar / eliminar / editar servicio")
+    st.subheader("Buscar / editar servicio")
 
-    ids = [r["id"] for r in rows]
+    # -------- BUSCAR SERVICIO POR ID O NOMBRE --------
+    col_bs1, col_bs2, col_bs3 = st.columns([2, 2, 1])
 
-    col_a, col_b = st.columns(2)
+    with col_bs1:
+        opciones_ids_serv = ["--"] + [str(r["id"]) for r in rows]
+        servicio_id_sel = st.selectbox("Buscar por ID de servicio", opciones_ids_serv)
 
-    with col_a:
-        selected_id = st.selectbox("Selecciona el ID del servicio", ids)
-        new_status = st.selectbox(
-            "Nuevo estado",
-            ["Pendiente", "Confirmado", "Realizado", "Cobrado"],
-        )
+    with col_bs2:
+        opciones_nombres_serv = ["--"]
+        etiqueta_a_servicio = {}
+        for r in rows:
+            etiqueta = f"{r['client_name']} ({r['date']} {r['time']})"
+            opciones_nombres_serv.append(etiqueta)
+            etiqueta_a_servicio[etiqueta] = r
+        servicio_nombre_sel = st.selectbox("Buscar por cliente / negocio", opciones_nombres_serv)
 
-        if st.button("Actualizar estado"):
-            update_status(selected_id, new_status)
-            st.success("✅ Estado actualizado.")
-            st.rerun()
+    with col_bs3:
+        buscar_servicio_btn = st.button("🔍 Buscar servicio")
 
-    with col_b:
-        st.write("")
-        st.write("")
-        if st.button("🗑️ Eliminar servicio"):
-            delete_appointment(selected_id)
-            st.warning("Servicio eliminado.")
-            st.rerun()
+    if buscar_servicio_btn:
+        servicio_id = None
 
-    # -------- EDITAR SERVICIO COMPLETO --------
-    selected_row = None
-    for r in rows:
-        if r["id"] == selected_id:
-            selected_row = r
-            break
-
-    if selected_row:
-        st.markdown("### ✏️ Editar servicio seleccionado")
-
-        # Convertir fecha y hora desde texto
-        try:
-            fecha_edit = dt.fromisoformat(selected_row["date"]).date()
-        except Exception:
+        # Preferimos búsqueda por ID si se eligió
+        if servicio_id_sel != "--":
             try:
-                fecha_edit = dt.strptime(selected_row["date"], "%Y-%m-%d").date()
+                sid = int(servicio_id_sel)
+                for r in rows:
+                    if r["id"] == sid:
+                        servicio_id = r["id"]
+                        break
+            except ValueError:
+                servicio_id = None
+        elif servicio_nombre_sel != "--":
+            servicio = etiqueta_a_servicio.get(servicio_nombre_sel)
+            if servicio:
+                servicio_id = servicio["id"]
+
+        if servicio_id is None:
+            st.error("No se encontró el servicio con los datos seleccionados.")
+            st.session_state["servicio_edit_id"] = None
+        else:
+            st.session_state["servicio_edit_id"] = servicio_id
+
+    servicio_edit_id = st.session_state.get("servicio_edit_id")
+
+    # -------- EDITAR / ELIMINAR SERVICIO (solo si se buscó) --------
+    if servicio_edit_id:
+        selected_row = None
+        for r in rows:
+            if r["id"] == servicio_edit_id:
+                selected_row = r
+                break
+
+        if selected_row:
+            st.markdown("### ✏️ Editar servicio seleccionado")
+
+            # Convertir fecha y hora desde texto
+            try:
+                fecha_edit = dt.fromisoformat(selected_row["date"]).date()
             except Exception:
-                fecha_edit = hoy
+                try:
+                    fecha_edit = dt.strptime(selected_row["date"], "%Y-%m-%d").date()
+                except Exception:
+                    fecha_edit = hoy
 
-        try:
-            hora_edit = dt.strptime(selected_row["time"], "%H:%M").time()
-        except Exception:
-            hora_edit = dt.now().time()
+            try:
+                hora_edit = dt.strptime(selected_row["time"], "%H:%M").time()
+            except Exception:
+                hora_edit = dt.now().time()
 
-        is_monthly_service_current = False
-        if "is_monthly_service" in selected_row.keys() and selected_row["is_monthly_service"] == 1:
-            is_monthly_service_current = True
+            is_monthly_service_current = False
+            if "is_monthly_service" in selected_row.keys() and selected_row["is_monthly_service"] == 1:
+                is_monthly_service_current = True
 
-        with st.form("form_editar_servicio"):
-            col_e1, col_e2, col_e3 = st.columns(3)
+            with st.form("form_editar_servicio"):
+                col_e1, col_e2, col_e3 = st.columns(3)
 
-            with col_e1:
-                client_name_edit = st.text_input(
-                    "Cliente / Negocio",
-                    value=selected_row["client_name"],
-                )
-                pest_type_edit = st.text_input(
-                    "Tipo de plaga",
-                    value=selected_row["pest_type"] or "",
+                with col_e1:
+                    client_name_edit = st.text_input(
+                        "Cliente / Negocio",
+                        value=selected_row["client_name"],
+                    )
+                    pest_type_edit = st.text_input(
+                        "Tipo de plaga",
+                        value=selected_row["pest_type"] or "",
+                    )
+
+                with col_e2:
+                    zone_edit = st.text_input(
+                        "Colonia / zona",
+                        value=selected_row["zone"] or "",
+                    )
+                    address_edit = st.text_input(
+                        "Dirección",
+                        value=selected_row["address"] or "",
+                    )
+                    phone_edit = st.text_input(
+                        "Teléfono",
+                        value=selected_row["phone"] or "",
+                    )
+
+                with col_e3:
+                    service_date_edit = st.date_input(
+                        "Fecha del servicio (editar)",
+                        value=fecha_edit,
+                        key="fecha_edit",
+                    )
+                    service_time_edit = st.time_input(
+                        "Hora del servicio (editar)",
+                        value=hora_edit,
+                        key="hora_edit",
+                    )
+                    price_edit = st.number_input(
+                        "Precio ($) (editar)",
+                        min_value=0.0,
+                        step=50.0,
+                        value=float(selected_row["price"]) if selected_row["price"] is not None else 0.0,
+                        key="price_edit",
+                    )
+                    status_edit = st.selectbox(
+                        "Estado (editar)",
+                        ["Pendiente", "Confirmado", "Realizado", "Cobrado"],
+                        index=["Pendiente", "Confirmado", "Realizado", "Cobrado"].index(selected_row["status"]) if selected_row["status"] in ["Pendiente", "Confirmado", "Realizado", "Cobrado"] else 0,
+                        key="status_edit",
+                    )
+
+                notes_edit = st.text_area(
+                    "Notas (editar)",
+                    value=selected_row["notes"] or "",
                 )
 
-            with col_e2:
-                zone_edit = st.text_input(
-                    "Colonia / zona",
-                    value=selected_row["zone"] or "",
-                )
-                address_edit = st.text_input(
-                    "Dirección",
-                    value=selected_row["address"] or "",
-                )
-                phone_edit = st.text_input(
-                    "Teléfono",
-                    value=selected_row["phone"] or "",
+                is_monthly_service_edit = st.checkbox(
+                    "Servicio mensual (editar)",
+                    value=is_monthly_service_current,
                 )
 
-            with col_e3:
-                service_date_edit = st.date_input(
-                    "Fecha del servicio (editar)",
-                    value=fecha_edit,
-                    key="fecha_edit",
-                )
-                service_time_edit = st.time_input(
-                    "Hora del servicio (editar)",
-                    value=hora_edit,
-                    key="hora_edit",
-                )
-                price_edit = st.number_input(
-                    "Precio ($) (editar)",
-                    min_value=0.0,
-                    step=50.0,
-                    value=float(selected_row["price"]) if selected_row["price"] is not None else 0.0,
-                    key="price_edit",
-                )
-                status_edit = st.selectbox(
-                    "Estado (editar)",
-                    ["Pendiente", "Confirmado", "Realizado", "Cobrado"],
-                    index=["Pendiente", "Confirmado", "Realizado", "Cobrado"].index(selected_row["status"]) if selected_row["status"] in ["Pendiente", "Confirmado", "Realizado", "Cobrado"] else 0,
-                    key="status_edit",
-                )
+                col_btn_s1, col_btn_s2 = st.columns(2)
+                with col_btn_s1:
+                    guardar_cambios_serv = st.form_submit_button("💾 Guardar cambios del servicio")
+                with col_btn_s2:
+                    eliminar_servicio_btn = st.form_submit_button("🗑️ Eliminar servicio")
 
-            notes_edit = st.text_area(
-                "Notas (editar)",
-                value=selected_row["notes"] or "",
-            )
+                if guardar_cambios_serv:
+                    update_appointment_full(
+                        appointment_id=servicio_edit_id,
+                        client_name=client_name_edit,
+                        service_type=selected_row["service_type"],
+                        pest_type=pest_type_edit,
+                        address=address_edit,
+                        zone=zone_edit,
+                        phone=phone_edit,
+                        fecha=str(service_date_edit),
+                        hora=str(service_time_edit)[:5],
+                        price=price_edit if price_edit > 0 else None,
+                        status=status_edit,
+                        notes=notes_edit,
+                        is_monthly_service=is_monthly_service_edit,
+                    )
+                    st.success("✅ Servicio actualizado correctamente.")
+                    st.session_state["servicio_edit_id"] = None
+                    st.rerun()
 
-            is_monthly_service_edit = st.checkbox(
-                "Servicio mensual (editar)",
-                value=is_monthly_service_current,
-            )
-
-            guardar_cambios = st.form_submit_button("💾 Guardar cambios del servicio")
-
-            if guardar_cambios:
-                update_appointment_full(
-                    appointment_id=selected_id,
-                    client_name=client_name_edit,
-                    service_type=selected_row["service_type"],
-                    pest_type=pest_type_edit,
-                    address=address_edit,
-                    zone=zone_edit,
-                    phone=phone_edit,
-                    fecha=str(service_date_edit),
-                    hora=str(service_time_edit)[:5],
-                    price=price_edit if price_edit > 0 else None,
-                    status=status_edit,
-                    notes=notes_edit,
-                    is_monthly_service=is_monthly_service_edit,
-                )
-                st.success("✅ Servicio actualizado correctamente.")
-                st.rerun()
+                if eliminar_servicio_btn:
+                    delete_appointment(servicio_edit_id)
+                    st.warning("🗑️ Servicio eliminado correctamente.")
+                    st.session_state["servicio_edit_id"] = None
+                    st.rerun()
 
 # =========================
 # BUSCAR Y EDITAR CLIENTE
@@ -631,46 +679,92 @@ else:
     with col_c3:
         buscar_cliente_btn = st.button("🔍 Buscar cliente")
 
-    cliente_encontrado = None
     if buscar_cliente_btn:
-        # Preferimos búsqueda por ID si se seleccionó
+        cliente_id = None
+
         if cliente_id_sel != "--":
             try:
                 cid = int(cliente_id_sel)
                 for c in clientes_all:
                     if c["id"] == cid:
-                        cliente_encontrado = c
+                        cliente_id = c["id"]
                         break
             except ValueError:
-                cliente_encontrado = None
+                cliente_id = None
         elif cliente_nombre_sel != "--":
-            cliente_encontrado = etiqueta_a_cliente.get(cliente_nombre_sel)
+            cliente = etiqueta_a_cliente.get(cliente_nombre_sel)
+            if cliente:
+                cliente_id = cliente["id"]
 
-    if buscar_cliente_btn and cliente_encontrado is None:
-        st.error("No se encontró el cliente con los datos seleccionados.")
+        if cliente_id is None:
+            st.error("No se encontró el cliente con los datos seleccionados.")
+            st.session_state["cliente_edit_id"] = None
+        else:
+            st.session_state["cliente_edit_id"] = cliente_id
 
-    if cliente_encontrado:
-        st.markdown("### ✏️ Editar datos del cliente")
+    cliente_edit_id = st.session_state.get("cliente_edit_id")
 
-        with st.form("form_editar_cliente"):
-            name_edit = st.text_input("Nombre de la persona / contacto", value=cliente_encontrado["name"] or "")
-            business_name_edit = st.text_input("Nombre del negocio", value=cliente_encontrado["business_name"] or "")
-            phone_edit = st.text_input("Teléfono", value=cliente_encontrado["phone"] or "")
-            zone_edit = st.text_input("Colonia / zona", value=cliente_encontrado["zone"] or "")
-            address_edit = st.text_input("Dirección", value=cliente_encontrado["address"] or "")
-            notes_edit = st.text_area("Notas", value=cliente_encontrado["notes"] or "")
+    if cliente_edit_id:
+        cliente_encontrado = None
+        for c in clientes_all:
+            if c["id"] == cliente_edit_id:
+                cliente_encontrado = c
+                break
 
-            guardar_cliente_cambios = st.form_submit_button("💾 Guardar cambios del cliente")
+        if cliente_encontrado:
+            st.markdown("### ✏️ Editar datos del cliente")
 
-            if guardar_cliente_cambios:
-                update_client(
-                    client_id=cliente_encontrado["id"],
-                    name=name_edit or "Cliente sin nombre",
-                    business_name=business_name_edit,
-                    address=address_edit,
-                    zone=zone_edit,
-                    phone=phone_edit,
-                    notes=notes_edit,
+            with st.form("form_editar_cliente"):
+                name_edit = st.text_input(
+                    "Nombre de la persona / contacto",
+                    value=cliente_encontrado["name"] or "",
                 )
-                st.success("✅ Cliente actualizado correctamente.")
-                st.rerun()
+                business_name_edit = st.text_input(
+                    "Nombre del negocio",
+                    value=cliente_encontrado["business_name"] or "",
+                )
+                phone_edit = st.text_input(
+                    "Teléfono",
+                    value=cliente_encontrado["phone"] or "",
+                )
+                zone_edit = st.text_input(
+                    "Colonia / zona",
+                    value=cliente_encontrado["zone"] or "",
+                )
+                address_edit = st.text_input(
+                    "Dirección",
+                    value=cliente_encontrado["address"] or "",
+                )
+                notes_edit = st.text_area(
+                    "Notas",
+                    value=cliente_encontrado["notes"] or "",
+                )
+
+                col_btn_c1, col_btn_c2 = st.columns(2)
+                with col_btn_c1:
+                    guardar_cliente_cambios = st.form_submit_button("💾 Guardar cambios del cliente")
+                with col_btn_c2:
+                    eliminar_cliente_btn = st.form_submit_button("🗑️ Eliminar cliente")
+
+                if guardar_cliente_cambios:
+                    if not name_edit and not business_name_edit:
+                        st.error("Pon al menos el nombre de la persona o del negocio.")
+                    else:
+                        update_client(
+                            client_id=cliente_edit_id,
+                            name=name_edit or "Cliente sin nombre",
+                            business_name=business_name_edit,
+                            address=address_edit,
+                            zone=zone_edit,
+                            phone=phone_edit,
+                            notes=notes_edit,
+                        )
+                        st.success("✅ Cliente actualizado correctamente.")
+                        st.session_state["cliente_edit_id"] = None
+                        st.rerun()
+
+                if eliminar_cliente_btn:
+                    delete_client(cliente_edit_id)
+                    st.warning("🗑️ Cliente eliminado correctamente.")
+                    st.session_state["cliente_edit_id"] = None
+                    st.rerun()
