@@ -202,7 +202,7 @@ if mensuales_hoy:
 # =========================
 # FORMULARIO CLIENTE + SERVICIO
 # =========================
-st.subheader("Nuevo servicio / Guardar cliente")
+st.subheader("Nuevo servicio / Guardar cliente y agendar")
 
 # Lista de clientes guardados
 opciones = ["-- Cliente nuevo --"]
@@ -214,10 +214,11 @@ for c in clientes:
     opciones.append(etiqueta)
     mapa_clientes[etiqueta] = c
 
-seleccion = st.selectbox("Cliente guardado", opciones)
+# 🔍 Buscar cliente
+seleccion = st.selectbox("Buscar cliente", opciones)
 cliente_sel = mapa_clientes.get(seleccion)
 
-with st.form("form_servicio_cliente", clear_on_submit=False):
+with st.form("form_servicio_cliente", clear_on_submit=True):
     col1, col2, col3 = st.columns(3)
 
     # -------- DATOS DEL CLIENTE --------
@@ -227,7 +228,7 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
             value=cliente_sel["name"] if cliente_sel else "",
         )
         business_name = st.text_input(
-            "Nombre del negocio (Taquería Sauces, etc.)",
+            "Nombre del negocio",
             value=cliente_sel["business_name"] if cliente_sel else "",
         )
 
@@ -255,19 +256,20 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
             ["Pendiente", "Confirmado", "Realizado", "Cobrado"],
         )
 
+    # Estos siempre empiezan en blanco aunque el cliente exista
     pest_type = st.text_input("Tipo de plaga (cucaracha, garrapata, termita, etc.)")
-    notes = st.text_area(
-        "Notas (referencias, paquete, observaciones, etc.)",
-        value=cliente_sel["notes"] if cliente_sel else "",
-    )
+    notes = st.text_area("Notas (referencias, paquete, observaciones, etc.)")
 
     # Cliente mensual
     col_m1, col_m2 = st.columns(2)
     with col_m1:
-        is_monthly = st.checkbox(
-            "Cliente con servicio mensual",
-            value=bool(cliente_sel["is_monthly"]) if cliente_sel else False,
-        ) if cliente_sel else st.checkbox("Cliente con servicio mensual", value=False)
+        if cliente_sel:
+            is_monthly = st.checkbox(
+                "Cliente con servicio mensual",
+                value=bool(cliente_sel["is_monthly"]),
+            )
+        else:
+            is_monthly = st.checkbox("Cliente con servicio mensual", value=False)
 
     with col_m2:
         monthly_day = None
@@ -283,15 +285,15 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
                 ),
             )
 
-    colA, colB = st.columns(2)
+    # ---------- ÚNICO BOTÓN: GUARDAR CLIENTE Y AGENDAR SERVICIO ----------
+    guardar_cliente_servicio = st.form_submit_button("🟩 Guardar cliente y agendar servicio")
 
-    # ---------- BOTÓN VERDE: GUARDAR CLIENTE ----------
-    with colA:
-        guardar_cliente = st.form_submit_button("🟩 Guardar cliente")
-        if guardar_cliente:
-            if not name and not business_name:
-                st.error("Pon al menos el nombre de la persona o del negocio para guardar el cliente.")
-            else:
+    if guardar_cliente_servicio:
+        if not name and not business_name:
+            st.error("Pon al menos el nombre de la persona o del negocio.")
+        else:
+            # Si es cliente NUEVO (no seleccionado en "Buscar cliente") → guardar cliente
+            if seleccion == "-- Cliente nuevo --":
                 add_client(
                     name=name or (business_name or "Cliente sin nombre"),
                     business_name=business_name,
@@ -302,32 +304,28 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
                     is_monthly=is_monthly,
                     monthly_day=monthly_day if is_monthly else None,
                 )
-                st.success("✅ Cliente guardado.")
-                st.rerun()
 
-    # ---------- BOTÓN AZUL: GUARDAR SERVICIO ----------
-    with colB:
-        guardar_servicio = st.form_submit_button("🟦 Guardar servicio")
-        if guardar_servicio:
+            # Siempre agendar el servicio
             nombre_mostrar = business_name or name
-            if not nombre_mostrar:
-                st.error("Pon al menos el nombre del negocio o de la persona para guardar el servicio.")
-            else:
-                add_appointment(
-                    client_name=nombre_mostrar,
-                    service_type="Negocio" if business_name else "Casa",
-                    pest_type=pest_type,
-                    address=address,
-                    zone=zone,
-                    phone=phone,
-                    fecha=str(service_date),
-                    hora=str(service_time)[:5],
-                    price=price if price > 0 else None,
-                    status=status,
-                    notes=notes,
-                )
-                st.success("✅ Servicio guardado en la agenda.")
-                st.rerun()
+            add_appointment(
+                client_name=nombre_mostrar,
+                service_type="Negocio" if business_name else "Casa",
+                pest_type=pest_type,
+                address=address,
+                zone=zone,
+                phone=phone,
+                fecha=str(service_date),
+                hora=str(service_time)[:5],
+                price=price if price > 0 else None,
+                status=status,
+                notes=notes,
+            )
+
+            st.success(
+                "✅ Servicio agendado."
+                + (" Cliente guardado." if seleccion == "-- Cliente nuevo --" else "")
+            )
+            st.rerun()
 
 # =========================
 # TABLA CLIENTES MENSUALES
@@ -376,7 +374,7 @@ with col_f2:
     )
 
 with col_f3:
-    st.write("")
+    st.write("")  # espacio
     st.write("")
 
 date_from = None
