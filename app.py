@@ -14,24 +14,54 @@ st.title("📅 Agenda Fumigaciones Xterminio")
 # =========================
 # FORMULARIO NUEVA CITA
 # =========================
+# =========================
+# FORMULARIO NUEVA CITA
+# =========================
 st.subheader("Nuevo servicio")
 
-with st.form("nuevo_servicio", clear_on_submit=True):
+# --- Cargar clientes guardados ---
+from db import get_clients, add_client
+
+clientes = get_clients()
+nombres_clientes = ["-- Cliente nuevo --"] + [c["name"] for c in clientes]
+
+seleccion = st.selectbox("Buscar cliente guardado", nombres_clientes)
+
+cliente_seleccionado = None
+if seleccion != "-- Cliente nuevo --":
+    for c in clientes:
+        if c["name"] == seleccion:
+            cliente_seleccionado = c
+            break
+
+with st.form("nuevo_servicio", clear_on_submit=False):
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        client_name = st.text_input("Nombre del cliente / negocio *")
+        client_name = st.text_input(
+            "Nombre del cliente / negocio *",
+            value=cliente_seleccionado["name"] if cliente_seleccionado else ""
+        )
         service_type = st.selectbox(
             "Tipo de servicio",
             ["Casa", "Negocio", "Condominio", "Otro"],
-            index=1,  # por default "Negocio"
+            index=1,
         )
         pest_type = st.text_input("Tipo de plaga (cucaracha, garrapata, termita, etc.)")
 
     with col2:
-        address = st.text_input("Dirección")
-        zone = st.text_input("Colonia / zona")
-        phone = st.text_input("Teléfono")
+        address = st.text_input(
+            "Dirección",
+            value=cliente_seleccionado["address"] if cliente_seleccionado else ""
+        )
+        zone = st.text_input(
+            "Colonia / zona",
+            value=cliente_seleccionado["zone"] if cliente_seleccionado else ""
+        )
+        phone = st.text_input(
+            "Teléfono",
+            value=cliente_seleccionado["phone"] if cliente_seleccionado else ""
+        )
 
     with col3:
         service_date = st.date_input("Fecha del servicio", value=date.today())
@@ -39,30 +69,46 @@ with st.form("nuevo_servicio", clear_on_submit=True):
         price = st.number_input("Precio estimado ($)", min_value=0.0, step=50.0)
         status = st.selectbox("Estado", ["Pendiente", "Confirmado", "Realizado", "Cobrado"])
 
-    notes = st.text_area("Notas (referencias, tipo de paquete, observaciones, etc.)")
+    notes = st.text_area(
+        "Notas (referencias, tipo de paquete, observaciones, etc.)",
+        value=cliente_seleccionado["notes"] if cliente_seleccionado else ""
+    )
 
-    submitted = st.form_submit_button("Guardar servicio")
+    colA, colB = st.columns(2)
 
-    if submitted:
-        if not client_name:
-            st.error("El nombre del cliente / negocio es obligatorio.")
-        else:
-            add_appointment(
-                client_name=client_name,
-                service_type=service_type,
-                pest_type=pest_type,
-                address=address,
-                zone=zone,
-                phone=phone,
-                date=str(service_date),
-                time=str(service_time)[:5],  # HH:MM
-                price=price if price > 0 else None,
-                status=status,
-                notes=notes,
-            )
-            st.success("✅ Servicio guardado en la agenda.")
-            st.rerun()
+    # ---------- BOTÓN GUARDAR CLIENTE ----------
+    with colA:
+        btn_cliente = st.form_submit_button("🟩 Guardar cliente")
+        if btn_cliente:
+            if not client_name:
+                st.error("El nombre del cliente es obligatorio.")
+            else:
+                add_client(client_name, address, zone, phone, notes)
+                st.success("Cliente guardado correctamente.")
+                st.rerun()
 
+    # ---------- BOTÓN GUARDAR SERVICIO ----------
+    with colB:
+        btn_servicio = st.form_submit_button("🟦 Guardar servicio")
+        if btn_servicio:
+            if not client_name:
+                st.error("El nombre del cliente es obligatorio.")
+            else:
+                add_appointment(
+                    client_name=client_name,
+                    service_type=service_type,
+                    pest_type=pest_type,
+                    address=address,
+                    zone=zone,
+                    phone=phone,
+                    date=str(service_date),
+                    time=str(service_time)[:5],
+                    price=price if price > 0 else None,
+                    status=status,
+                    notes=notes,
+                )
+                st.success("Servicio guardado en la agenda.")
+                st.rerun()
 
 # =========================
 # FILTROS
