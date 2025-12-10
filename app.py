@@ -1,30 +1,21 @@
 import streamlit as st
 from datetime import date, timedelta
 
-from db import (
-    init_db,
-    add_client,
-    get_clients,
-    add_appointment,
-    get_appointments,
-    update_status,
-    delete_appointment,
-)
+import db  # usamos el módulo completo
 
 # Inicializar base de datos
-init_db()
+db.init_db()
 
 st.set_page_config(page_title="Agenda FX 2025", layout="wide")
 st.title("📅 Agenda Fumigaciones Xterminio")
 
+hoy = date.today()
+dia_hoy = hoy.day
 
 # =========================
 # AVISO CLIENTES MENSUALES
 # =========================
-clientes = get_clients()
-hoy = date.today()
-dia_hoy = hoy.day
-
+clientes = db.get_clients()
 mensuales_hoy = [
     c for c in clientes
     if c["is_monthly"] == 1 and c["monthly_day"] == dia_hoy
@@ -40,16 +31,14 @@ if mensuales_hoy:
         + "\n- ".join(nombres)
     )
 
-
 # =========================
 # FORMULARIO CLIENTE + SERVICIO
 # =========================
 st.subheader("Nuevo servicio / Guardar cliente")
 
-# Lista para seleccionar cliente guardado
+# Lista de clientes guardados
 opciones = ["-- Cliente nuevo --"]
 mapa_clientes = {}
-
 for c in clientes:
     etiqueta = c["business_name"] or c["name"]
     if c["business_name"] and c["name"]:
@@ -63,7 +52,7 @@ cliente_sel = mapa_clientes.get(seleccion)
 with st.form("form_servicio_cliente", clear_on_submit=False):
     col1, col2, col3 = st.columns(3)
 
-    # Datos de cliente
+    # -------- DATOS DEL CLIENTE --------
     with col1:
         name = st.text_input(
             "Nombre de la persona / contacto",
@@ -89,7 +78,7 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
         )
 
     with col3:
-        # Datos del servicio
+        # -------- DATOS DEL SERVICIO --------
         service_date = st.date_input("Fecha del servicio", value=hoy)
         service_time = st.time_input("Hora del servicio")
         price = st.number_input("Precio del servicio ($)", min_value=0.0, step=50.0)
@@ -112,12 +101,18 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
             value=bool(cliente_sel["is_monthly"]) if cliente_sel else False,
         )
     with col_m2:
-        monthly_day = st.number_input(
-            "Día del mes para servicio mensual (1-31)",
-            min_value=1,
-            max_value=31,
-            value=cliente_sel["monthly_day"] if cliente_sel and cliente_sel["monthly_day"] else dia_hoy,
-        ) if is_monthly else None
+        monthly_day = None
+        if is_monthly:
+            monthly_day = st.number_input(
+                "Día del mes para servicio mensual (1-31)",
+                min_value=1,
+                max_value=31,
+                value=(
+                    cliente_sel["monthly_day"]
+                    if cliente_sel and cliente_sel["monthly_day"]
+                    else dia_hoy
+                ),
+            )
 
     colA, colB = st.columns(2)
 
@@ -128,7 +123,7 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
             if not name and not business_name:
                 st.error("Pon al menos el nombre de la persona o del negocio para guardar el cliente.")
             else:
-                add_client(
+                db.add_client(
                     name=name or (business_name or "Cliente sin nombre"),
                     business_name=business_name,
                     address=address,
@@ -149,7 +144,7 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
             if not nombre_mostrar:
                 st.error("Pon al menos el nombre del negocio o de la persona para guardar el servicio.")
             else:
-                add_appointment(
+                db.add_appointment(
                     client_name=nombre_mostrar,
                     service_type="Negocio" if business_name else "Casa",
                     pest_type=pest_type,
@@ -165,13 +160,12 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
                 st.success("✅ Servicio guardado en la agenda.")
                 st.rerun()
 
-
 # =========================
 # TABLA CLIENTES MENSUALES
 # =========================
 st.subheader("Clientes mensuales")
 
-clientes = get_clients()
+clientes = db.get_clients()
 mensuales = [c for c in clientes if c["is_monthly"] == 1]
 
 if not mensuales:
@@ -190,7 +184,6 @@ else:
         for c in mensuales
     ]
     st.dataframe(tabla_clientes, use_container_width=True)
-
 
 # =========================
 # SERVICIOS AGENDADOS
@@ -217,7 +210,6 @@ with col_f3:
     st.write("")
     st.write("")
 
-# Calcular rango de fechas
 date_from = None
 date_to = None
 
@@ -228,7 +220,7 @@ elif filtro_rango == "Próximos 7 días":
     date_from = str(hoy)
     date_to = str(hoy + timedelta(days=7))
 
-rows = get_appointments(date_from=date_from, date_to=date_to, status=filtro_estado)
+rows = db.get_appointments(date_from=date_from, date_to=date_to, status=filtro_estado)
 
 if not rows:
     st.info("No hay servicios con los filtros seleccionados.")
@@ -266,7 +258,7 @@ else:
         )
 
         if st.button("Actualizar estado"):
-            update_status(selected_id, new_status)
+            db.update_status(selected_id, new_status)
             st.success("✅ Estado actualizado.")
             st.rerun()
 
@@ -274,6 +266,6 @@ else:
         st.write("")
         st.write("")
         if st.button("🗑️ Eliminar servicio"):
-            delete_appointment(selected_id)
+            db.delete_appointment(selected_id)
             st.warning("Servicio eliminado.")
             st.rerun()
