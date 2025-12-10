@@ -3,20 +3,17 @@ from datetime import datetime
 
 DB_NAME = "agenda.db"
 
-
 def get_connection():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
-
 
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
 
     # Tabla de servicios
-    cur.execute(
-        """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS appointments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             client_name TEXT NOT NULL,
@@ -32,12 +29,10 @@ def init_db():
             notes TEXT,
             created_at TEXT
         );
-        """
-    )
+    """)
 
     # Tabla de clientes
-    cur.execute(
-        """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -47,36 +42,20 @@ def init_db():
             phone TEXT,
             notes TEXT
         );
-        """
-    )
+    """)
 
     conn.commit()
     conn.close()
-
-
-# --------------------------
+    # ---------------------------
 # APPOINTMENTS (SERVICIOS)
-# --------------------------
+# ---------------------------
 
-def add_appointment(
-    client_name,
-    service_type,
-    pest_type,
-    address,
-    zone,
-    phone,
-    date,
-    time,
-    price,
-    status,
-    notes,
-):
+def add_appointment(client_name, service_type, pest_type, address, zone, phone, date, time, price, status, notes):
     conn = get_connection()
     cur = conn.cursor()
     created_at = datetime.now().isoformat(timespec="seconds")
 
-    cur.execute(
-        """
+    cur.execute("""
         INSERT INTO appointments (
             client_name, service_type, pest_type,
             address, zone, phone,
@@ -84,22 +63,7 @@ def add_appointment(
             status, notes, created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            client_name,
-            service_type,
-            pest_type,
-            address,
-            zone,
-            phone,
-            date,
-            time,
-            price,
-            status,
-            notes,
-            created_at,
-        ),
-    )
+    """, (client_name, service_type, pest_type, address, zone, phone, date, time, price, status, notes, created_at))
 
     conn.commit()
     conn.close()
@@ -128,6 +92,7 @@ def get_appointments(date_from=None, date_to=None, status=None):
 
     cur.execute(query, params)
     rows = cur.fetchall()
+
     conn.close()
     return rows
 
@@ -135,12 +100,7 @@ def get_appointments(date_from=None, date_to=None, status=None):
 def update_status(appointment_id, new_status):
     conn = get_connection()
     cur = conn.cursor()
-
-    cur.execute(
-        "UPDATE appointments SET status = ? WHERE id = ?",
-        (new_status, appointment_id),
-    )
-
+    cur.execute("UPDATE appointments SET status = ? WHERE id = ?", (new_status, appointment_id))
     conn.commit()
     conn.close()
 
@@ -148,30 +108,20 @@ def update_status(appointment_id, new_status):
 def delete_appointment(appointment_id):
     conn = get_connection()
     cur = conn.cursor()
-
     cur.execute("DELETE FROM appointments WHERE id = ?", (appointment_id,))
     conn.commit()
     conn.close()
-
-
-# --------------------------
+    # ---------------------------
 # CLIENTES
-# --------------------------
+# ---------------------------
 
 def add_client(name, business_name, address, zone, phone, notes):
     conn = get_connection()
     cur = conn.cursor()
-
-    cur.execute(
-        """
-        INSERT INTO clients (
-            name, business_name, address, zone, phone, notes
-        )
+    cur.execute("""
+        INSERT INTO clients (name, business_name, address, zone, phone, notes)
         VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (name, business_name, address, zone, phone, notes),
-    )
-
+    """, (name, business_name, address, zone, phone, notes))
     conn.commit()
     conn.close()
 
@@ -179,10 +129,8 @@ def add_client(name, business_name, address, zone, phone, notes):
 def get_clients():
     conn = get_connection()
     cur = conn.cursor()
-
-    cur.execute("SELECT * FROM clients ORDER BY name;")
+    cur.execute("SELECT * FROM clients ORDER BY name")
     rows = cur.fetchall()
-
     conn.close()
     return rows
 
@@ -190,10 +138,8 @@ def get_clients():
 def get_client_by_id(client_id):
     conn = get_connection()
     cur = conn.cursor()
-
-    cur.execute("SELECT * FROM clients WHERE id = ?;", (client_id,))
+    cur.execute("SELECT * FROM clients WHERE id = ?", (client_id,))
     row = cur.fetchone()
-
     conn.close()
     return row
 
@@ -201,8 +147,6 @@ def get_client_by_id(client_id):
 def delete_client(client_id):
     conn = get_connection()
     cur = conn.cursor()
-
-    cur.execute("DELETE FROM clients WHERE id = ?;", (client_id,))
+    cur.execute("DELETE FROM clients WHERE id = ?", (client_id,))
     conn.commit()
-
     conn.close()
