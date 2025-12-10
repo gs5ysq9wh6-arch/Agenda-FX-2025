@@ -127,3 +127,33 @@ def delete_appointment(appointment_id):
     cur.execute("DELETE FROM appointments WHERE id = ?", (appointment_id,))
     conn.commit()
     conn.close()
+# ============ CLIENTES ============
+
+def add_client(name, address, zone, phone, notes):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS clients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            address TEXT,
+            zone TEXT,
+            phone TEXT,
+            notes TEXT
+        );
+    """)
+    cur.execute("""
+        INSERT INTO clients (name, address, zone, phone, notes)
+        VALUES (?, ?, ?, ?, ?)
+    """, (name, address, zone, phone, notes))
+    conn.commit()
+    conn.close()
+
+
+def get_clients():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM clients ORDER BY name;")
+    rows = cur.fetchall()
+    conn.close()
+    return rows
