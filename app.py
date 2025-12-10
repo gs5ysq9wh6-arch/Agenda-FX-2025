@@ -1,186 +1,153 @@
 import streamlit as st
 from datetime import date, timedelta
+from db import init_db, add_appointment, get_appointments, update_status, delete_appointment
 
-from db import (
-    init_db,
-    add_appointment,
-    get_appointments,
-    update_status,
-    delete_appointment,
-    add_client,
-    get_clients,
-    get_client_by_id,
-    delete_client,
-)
-
-# Inicializar DB
+# Inicializar base de datos
 init_db()
 
 st.set_page_config(page_title="Agenda Fumigaciones Xterminio", layout="wide")
 
 st.title("📅 Agenda Fumigaciones Xterminio")
 
-# Tabs
-tab_agenda, tab_clientes = st.tabs(["Agenda", "Clientes"])
+# ------------------------
+# NUEVO SERVICIO
+# ------------------------
+st.subheader("Nuevo servicio")
 
-# -------------------------
-# TAB AGENDA
-# -------------------------
-with tab_agenda:
-    st.subheader("Nuevo servicio")
+with st.form("nuevo_servicio", clear_on_submit=True):
+    col1, col2, col3 = st.columns(3)
 
-    clients = get_clients()
+    with col1:
+        client_name = st.text_input("Nombre del cliente / negocio *")
+        service_type = st.selectbox(
+            "Tipo de servicio",
+            ["Casa", "Negocio", "Condominio", "Otro"],
+            index=1,
+        )
+        pest_type = st.text_input("Tipo de plaga (cucaracha, garrapata, termita, etc.)")
 
-    client_labels = ["-- Cliente nuevo --"] + [
-        f"{c['name']} ({c['business_name']})" if c["business_name"] else c["name"]
-        for c in clients
-    ]
-    client_ids = [None] + [c["id"] for c in clients]
+    with col2:
+        address = st.text_input("Dirección")
+        zone = st.text_input("Colonia / zona")
+        phone = st.text_input("Teléfono")
 
-    selected_label = st.selectbox("Cliente guardado:", client_labels)
-    selected_client_id = client_ids[client_labels.index(selected_label)]
-    selected_client = get_client_by_id(selected_client_id) if selected_client_id else None
+    with col3:
+        service_date = st.date_input("Fecha del servicio", value=date.today())
+        service_time = st.time_input("Hora del servicio")
+        price = st.number_input("Precio estimado ($)", min_value=0.0, step=50.0)
+        status = st.selectbox(
+            "Estado",
+            ["Pendiente", "Confirmado", "Realizado", "Cobrado"],
+        )
 
-    with st.form("nuevo_servicio", clear_on_submit=True):
-        col1, col2, col3 = st.columns(3)
+    notes = st.text_area("Notas (referencias, tipo de paquete, observaciones, etc.)")
 
-        with col1:
-            client_name = st.text_input(
-                "Nombre del cliente",
-                value=selected_client["name"] if selected_client else "",
-            )
-            service_type = st.selectbox("Tipo de servicio", ["Casa", "Negocio", "Condominio", "Otro"])
-            pest_type = st.text_input("Tipo de plaga")
+    submitted = st.form_submit_button("Guardar servicio")
 
-        with col2:
-            address = st.text_input(
-                "Dirección",
-                value=selected_client["address"] if selected_client else "",
-            )
-            zone = st.text_input(
-                "Zona",
-                value=selected_client["zone"] if selected_client else "",
-            )
-            phone = st.text_input(
-                "Teléfono",
-                value=selected_client["phone"] if selected_client else "",
-            )
-
-        with col3:
-            service_date = st.date_input("Fecha", value=date.today())
-            service_time = st.time_input("Hora")
-            price = st.number_input("Precio ($)", min_value=0.0, step=50.0)
-            status = st.selectbox("Estado", ["Pendiente", "Confirmado", "Realizado", "Cobrado"])
-
-        notes = st.text_area("Notas")
-
-        submit = st.form_submit_button("Guardar servicio")
-
-        if submit:
+    if submitted:
+        if not client_name:
+            st.error("El nombre del cliente / negocio es obligatorio.")
+        else:
             add_appointment(
-                client_name,
-                service_type,
-                pest_type,
-                address,
-                zone,
-                phone,
-                str(service_date),
-                str(service_time)[:5],
-                price,
-                status,
-                notes,
+                client_name=client_name,
+                service_type=service_type,
+                pest_type=pest_type,
+                address=address,
+                zone=zone,
+                phone=phone,
+                date=str(service_date),
+                time=str(service_time)[:5],
+                price=price if price > 0 else None,
+                status=status,
+                notes=notes,
             )
-            st.success("Servicio guardado.")
+            st.success("✅ Servicio guardado en la agenda.")
             st.rerun()
 
-    st.subheader("Servicios")
+# ------------------------
+# FILTROS
+# ------------------------
+st.subheader("Servicios agendados")
 
-    col_a, col_b, col_c = st.columns(3)
+col_f1, col_f2, col_f3 = st.columns(3)
+
+with col_f1:
+    filtro_rango = st.selectbox(
+        "Rango de fechas",
+        ["Hoy", "Próximos 7 días", "Todos"],
+        index=1,
+    )
+
+with col_f2:
+    filtro_estado = st.selectbox(
+        "Estado",
+        ["Todos", "Pendiente", "Confirmado", "Realizado", "Cobrado"],
+        index=0,
+    )
+
+with col_f3:
+    st.write("")
+    st.write("")
+
+hoy = date.today()
+date_from = None
+date_to = None
+
+if filtro_rango == "Hoy":
+    date_from = str(hoy)
+    date_to = str(hoy)
+elif filtro_rango == "Próximos 7 días":
+    date_from = str(hoy)
+    date_to = str(hoy + timedelta(days=7))
+
+rows = get_appointments(date_from=date_from, date_to=date_to, status=filtro_estado)
+
+if not rows:
+    st.info("No hay servicios en la agenda con los filtros seleccionados.")
+else:
+    data = [
+        {
+            "ID": r["id"],
+            "Fecha": r["date"],
+            "Hora": r["time"],
+            "Cliente/Negocio": r["client_name"],
+            "Servicio": r["service_type"],
+            "Plaga": r["pest_type"],
+            "Zona": r["zone"],
+            "Teléfono": r["phone"],
+            "Precio": r["price"],
+            "Estado": r["status"],
+            "Notas": r["notes"],
+        }
+        for r in rows
+    ]
+
+    st.dataframe(data, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("Actualizar / eliminar servicio")
+
+    ids = [r["id"] for r in rows]
+
+    col_a, col_b = st.columns(2)
 
     with col_a:
-        rango = st.selectbox("Rango", ["Hoy", "Próximos 7 días", "Todos"], index=1)
-    with col_b:
-        estado = st.selectbox("Estado", ["Todos", "Pendiente", "Confirmado", "Realizado", "Cobrado"])
+        selected_id = st.selectbox("Selecciona el ID", ids)
 
-    today = date.today()
-    date_from, date_to = None, None
+        new_status = st.selectbox(
+            "Nuevo estado",
+            ["Pendiente", "Confirmado", "Realizado", "Cobrado"],
+        )
 
-    if rango == "Hoy":
-        date_from = str(today)
-        date_to = str(today)
-    elif rango == "Próximos 7 días":
-        date_from = str(today)
-        date_to = str(today + timedelta(days=7))
-
-    rows = get_appointments(date_from=date_from, date_to=date_to, status=estado)
-
-    if not rows:
-        st.info("No hay servicios.")
-    else:
-        st.dataframe(rows)
-
-        st.subheader("Actualizar / Eliminar")
-
-        ids = [r["id"] for r in rows]
-        selected_id = st.selectbox("ID del servicio", ids)
-
-        col_u, col_d = st.columns(2)
-
-        with col_u:
-            new_status = st.selectbox("Nuevo estado", ["Pendiente", "Confirmado", "Realizado", "Cobrado"])
-            if st.button("Actualizar estado"):
-                update_status(selected_id, new_status)
-                st.success("Actualizado.")
-                st.rerun()
-
-        with col_d:
-            if st.button("Eliminar servicio"):
-                delete_appointment(selected_id)
-                st.warning("Servicio eliminado.")
-                st.rerun()
-
-# -------------------------
-# TAB CLIENTES
-# -------------------------
-with tab_clientes:
-    st.subheader("Registro de clientes")
-
-    with st.form("form_clientes", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-
-        with col1:
-            name = st.text_input("Nombre *")
-            business_name = st.text_input("Negocio")
-
-        with col2:
-            phone = st.text_input("Teléfono")
-            zone = st.text_input("Zona")
-            address = st.text_input("Dirección")
-
-        notes_c = st.text_area("Notas del cliente")
-
-        submit_c = st.form_submit_button("Guardar cliente")
-
-        if submit_c:
-            add_client(name, business_name, address, zone, phone, notes_c)
-            st.success("Cliente guardado.")
+        if st.button("Actualizar estado"):
+            update_status(selected_id, new_status)
+            st.success("✅ Estado actualizado.")
             st.rerun()
 
-    st.subheader("Clientes registrados")
-
-    rows = get_clients()
-
-    if not rows:
-        st.info("No hay clientes.")
-    else:
-        st.dataframe(rows)
-
-        st.subheader("Eliminar cliente")
-
-        client_ids = [c["id"] for c in rows]
-        selected_client_id = st.selectbox("ID del cliente", client_ids)
-
-        if st.button("Eliminar cliente"):
-            delete_client(selected_client_id)
-            st.warning("Cliente eliminado.")
+    with col_b:
+        st.write("")
+        st.write("")
+        if st.button("🗑️ Eliminar servicio"):
+            delete_appointment(selected_id)
+            st.warning("Servicio eliminado.")
             st.rerun()
