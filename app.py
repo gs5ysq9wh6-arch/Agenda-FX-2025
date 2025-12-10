@@ -19,7 +19,7 @@ def init_db():
     conn = get_conn()
     c = conn.cursor()
 
-    # Tabla de clientes (dejamos is_monthly/monthly_day aunque ya no se usen)
+    # Tabla de clientes (dejamos is_monthly/monthly_day aunque casi no se usen)
     c.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,6 +85,27 @@ def add_client(name, business_name, address, zone, phone, notes,
         notes,
         1 if is_monthly else 0,
         monthly_day,
+    ))
+    conn.commit()
+    conn.close()
+
+
+def update_client(client_id, name, business_name, address, zone, phone, notes):
+    """Actualiza los datos de un cliente existente."""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        UPDATE clients
+        SET name = ?, business_name = ?, address = ?, zone = ?, phone = ?, notes = ?
+        WHERE id = ?
+    """, (
+        name,
+        business_name,
+        address,
+        zone,
+        phone,
+        notes,
+        client_id,
     ))
     conn.commit()
     conn.close()
@@ -306,7 +327,7 @@ with st.form("form_servicio_cliente", clear_on_submit=True):
     pest_type = st.text_input("Tipo de plaga (cucaracha, garrapata, termita, etc.)")
     notes = st.text_area("Notas (referencias, paquete, observaciones, etc.)")
 
-    # Ahora la mensualidad es por SERVICIO, no por cliente
+    # Mensualidad por SERVICIO
     is_monthly_service = st.checkbox("Servicio mensual", value=False)
 
     # ---------- ÚNICO BOTÓN: GUARDAR CLIENTE Y AGENDAR SERVICIO ----------
@@ -449,7 +470,7 @@ else:
     col_a, col_b = st.columns(2)
 
     with col_a:
-        selected_id = st.selectbox("Selecciona el ID", ids)
+        selected_id = st.selectbox("Selecciona el ID del servicio", ids)
         new_status = st.selectbox(
             "Nuevo estado",
             ["Pendiente", "Confirmado", "Realizado", "Cobrado"],
@@ -577,4 +598,79 @@ else:
                     is_monthly_service=is_monthly_service_edit,
                 )
                 st.success("✅ Servicio actualizado correctamente.")
+                st.rerun()
+
+# =========================
+# BUSCAR Y EDITAR CLIENTE
+# =========================
+st.markdown("---")
+st.subheader("Buscar y editar cliente")
+
+clientes_all = get_clients()
+
+if not clientes_all:
+    st.info("Aún no tienes clientes guardados.")
+else:
+    col_c1, col_c2, col_c3 = st.columns([2, 2, 1])
+
+    with col_c1:
+        opciones_ids = ["--"] + [str(c["id"]) for c in clientes_all]
+        cliente_id_sel = st.selectbox("Buscar por ID de cliente", opciones_ids)
+
+    with col_c2:
+        opciones_nombres = ["--"]
+        etiqueta_a_cliente = {}
+        for c in clientes_all:
+            etiqueta = c["business_name"] or c["name"]
+            if c["business_name"] and c["name"]:
+                etiqueta = f"{c['business_name']} ({c['name']})"
+            opciones_nombres.append(etiqueta)
+            etiqueta_a_cliente[etiqueta] = c
+        cliente_nombre_sel = st.selectbox("Buscar por nombre / negocio", opciones_nombres)
+
+    with col_c3:
+        buscar_cliente_btn = st.button("🔍 Buscar cliente")
+
+    cliente_encontrado = None
+    if buscar_cliente_btn:
+        # Preferimos búsqueda por ID si se seleccionó
+        if cliente_id_sel != "--":
+            try:
+                cid = int(cliente_id_sel)
+                for c in clientes_all:
+                    if c["id"] == cid:
+                        cliente_encontrado = c
+                        break
+            except ValueError:
+                cliente_encontrado = None
+        elif cliente_nombre_sel != "--":
+            cliente_encontrado = etiqueta_a_cliente.get(cliente_nombre_sel)
+
+    if buscar_cliente_btn and cliente_encontrado is None:
+        st.error("No se encontró el cliente con los datos seleccionados.")
+
+    if cliente_encontrado:
+        st.markdown("### ✏️ Editar datos del cliente")
+
+        with st.form("form_editar_cliente"):
+            name_edit = st.text_input("Nombre de la persona / contacto", value=cliente_encontrado["name"] or "")
+            business_name_edit = st.text_input("Nombre del negocio", value=cliente_encontrado["business_name"] or "")
+            phone_edit = st.text_input("Teléfono", value=cliente_encontrado["phone"] or "")
+            zone_edit = st.text_input("Colonia / zona", value=cliente_encontrado["zone"] or "")
+            address_edit = st.text_input("Dirección", value=cliente_encontrado["address"] or "")
+            notes_edit = st.text_area("Notas", value=cliente_encontrado["notes"] or "")
+
+            guardar_cliente_cambios = st.form_submit_button("💾 Guardar cambios del cliente")
+
+            if guardar_cliente_cambios:
+                update_client(
+                    client_id=cliente_encontrado["id"],
+                    name=name_edit or "Cliente sin nombre",
+                    business_name=business_name_edit,
+                    address=address_edit,
+                    zone=zone_edit,
+                    phone=phone_edit,
+                    notes=notes_edit,
+                )
+                st.success("✅ Cliente actualizado correctamente.")
                 st.rerun()
