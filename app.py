@@ -19,7 +19,7 @@ def init_db():
     conn = get_conn()
     c = conn.cursor()
 
-    # Tabla de clientes
+    # Tabla de clientes (dejamos is_monthly/monthly_day aunque ya no se usen)
     c.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,7 +34,7 @@ def init_db():
         );
     """)
 
-    # Tabla de servicios
+    # Tabla de servicios (citas)
     c.execute("""
         CREATE TABLE IF NOT EXISTS appointments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,6 +52,13 @@ def init_db():
             created_at TEXT
         );
     """)
+
+    # Asegurar columna para marcar servicio mensual
+    try:
+        c.execute("ALTER TABLE appointments ADD COLUMN is_monthly_service INTEGER DEFAULT 0;")
+    except Exception:
+        # Si ya existe, ignoramos el error
+        pass
 
     conn.commit()
     conn.close()
@@ -94,19 +101,25 @@ def get_clients():
 
 def add_appointment(client_name, service_type, pest_type,
                     address, zone, phone, fecha, hora,
-                    price, status, notes):
+                    price, status, notes, is_monthly_service=False):
     conn = get_conn()
     c = conn.cursor()
     created_at = dt.now().isoformat(timespec="seconds")
+
+    # Nos aseguramos de que la columna exista
+    try:
+        c.execute("ALTER TABLE appointments ADD COLUMN is_monthly_service INTEGER DEFAULT 0;")
+    except Exception:
+        pass
 
     c.execute("""
         INSERT INTO appointments (
             client_name, service_type, pest_type,
             address, zone, phone,
             date, time, price,
-            status, notes, created_at
+            status, notes, created_at, is_monthly_service
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         client_name,
         service_type,
@@ -120,6 +133,7 @@ def add_appointment(client_name, service_type, pest_type,
         status,
         notes,
         created_at,
+        1 if is_monthly_service else 0,
     ))
     conn.commit()
     conn.close()
@@ -169,6 +183,52 @@ def delete_appointment(appointment_id):
     conn.close()
 
 
+def update_appointment_full(appointment_id, client_name, service_type, pest_type,
+                            address, zone, phone, fecha, hora,
+                            price, status, notes, is_monthly_service):
+    """Actualiza todos los datos principales de un servicio."""
+    conn = get_conn()
+    c = conn.cursor()
+    # asegurar columna
+    try:
+        c.execute("ALTER TABLE appointments ADD COLUMN is_monthly_service INTEGER DEFAULT 0;")
+    except Exception:
+        pass
+
+    c.execute("""
+        UPDATE appointments
+        SET client_name = ?,
+            service_type = ?,
+            pest_type = ?,
+            address = ?,
+            zone = ?,
+            phone = ?,
+            date = ?,
+            time = ?,
+            price = ?,
+            status = ?,
+            notes = ?,
+            is_monthly_service = ?
+        WHERE id = ?
+    """, (
+        client_name,
+        service_type,
+        pest_type,
+        address,
+        zone,
+        phone,
+        fecha,
+        hora,
+        price,
+        status,
+        notes,
+        1 if is_monthly_service else 0,
+        appointment_id,
+    ))
+    conn.commit()
+    conn.close()
+
+
 # =========================
 # INICIO APP
 # =========================
@@ -181,23 +241,9 @@ hoy = date.today()
 dia_hoy = hoy.day
 
 # =========================
-# AVISO CLIENTES MENSUALES
+# CARGAR CLIENTES
 # =========================
 clientes = get_clients()
-mensuales_hoy = [
-    c for c in clientes
-    if c["is_monthly"] == 1 and c["monthly_day"] == dia_hoy
-]
-
-if mensuales_hoy:
-    nombres = [
-        (c["business_name"] or c["name"])
-        for c in mensuales_hoy
-    ]
-    st.warning(
-        "🔔 Clientes mensuales para HOY (día {}):\n\n- ".format(dia_hoy)
-        + "\n- ".join(nombres)
-    )
 
 # =========================
 # FORMULARIO CLIENTE + SERVICIO
@@ -260,30 +306,8 @@ with st.form("form_servicio_cliente", clear_on_submit=True):
     pest_type = st.text_input("Tipo de plaga (cucaracha, garrapata, termita, etc.)")
     notes = st.text_area("Notas (referencias, paquete, observaciones, etc.)")
 
-    # Cliente mensual
-    col_m1, col_m2 = st.columns(2)
-    with col_m1:
-        if cliente_sel:
-            is_monthly = st.checkbox(
-                "Cliente con servicio mensual",
-                value=bool(cliente_sel["is_monthly"]),
-            )
-        else:
-            is_monthly = st.checkbox("Cliente con servicio mensual", value=False)
-
-    with col_m2:
-        monthly_day = None
-        if is_monthly:
-            monthly_day = st.number_input(
-                "Día del mes para servicio mensual (1-31)",
-                min_value=1,
-                max_value=31,
-                value=(
-                    cliente_sel["monthly_day"]
-                    if cliente_sel and cliente_sel["monthly_day"]
-                    else dia_hoy
-                ),
-            )
+    # Ahora la mensualidad es por SERVICIO, no por cliente
+    is_monthly_service = st.checkbox("Servicio mensual", value=False)
 
     # ---------- ÚNICO BOTÓN: GUARDAR CLIENTE Y AGENDAR SERVICIO ----------
     guardar_cliente_servicio = st.form_submit_button("🟩 Guardar cliente y agendar servicio")
@@ -301,8 +325,8 @@ with st.form("form_servicio_cliente", clear_on_submit=True):
                     zone=zone,
                     phone=phone,
                     notes=notes,
-                    is_monthly=is_monthly,
-                    monthly_day=monthly_day if is_monthly else None,
+                    is_monthly=False,
+                    monthly_day=None,
                 )
 
             # Siempre agendar el servicio
@@ -319,6 +343,7 @@ with st.form("form_servicio_cliente", clear_on_submit=True):
                 price=price if price > 0 else None,
                 status=status,
                 notes=notes,
+                is_monthly_service=is_monthly_service,
             )
 
             st.success(
@@ -328,29 +353,35 @@ with st.form("form_servicio_cliente", clear_on_submit=True):
             st.rerun()
 
 # =========================
-# TABLA CLIENTES MENSUALES
+# TABLA SERVICIOS MENSUALES
 # =========================
-st.subheader("Clientes mensuales")
+st.subheader("Servicios marcados como mensuales")
 
-clientes = get_clients()
-mensuales = [c for c in clientes if c["is_monthly"] == 1]
+todos_servicios = get_appointments()
+servicios_mensuales = [
+    r for r in todos_servicios
+    if "is_monthly_service" in r.keys() and r["is_monthly_service"] == 1
+]
 
-if not mensuales:
-    st.info("Aún no tienes clientes marcados como mensuales.")
+if not servicios_mensuales:
+    st.info("Aún no tienes servicios marcados como mensuales.")
 else:
-    tabla_clientes = [
+    tabla_mensuales = [
         {
-            "ID": c["id"],
-            "Negocio": c["business_name"],
-            "Contacto": c["name"],
-            "Teléfono": c["phone"],
-            "Zona": c["zone"],
-            "Día mensual": c["monthly_day"],
-            "Notas": c["notes"],
+            "ID": r["id"],
+            "Fecha": r["date"],
+            "Hora": r["time"],
+            "Cliente/Negocio": r["client_name"],
+            "Plaga": r["pest_type"],
+            "Zona": r["zone"],
+            "Teléfono": r["phone"],
+            "Precio": r["price"],
+            "Estado": r["status"],
+            "Notas": r["notes"],
         }
-        for c in mensuales
+        for r in servicios_mensuales
     ]
-    st.dataframe(tabla_clientes, use_container_width=True)
+    st.dataframe(tabla_mensuales, use_container_width=True)
 
 # =========================
 # SERVICIOS AGENDADOS
@@ -411,7 +442,7 @@ else:
     st.dataframe(data, use_container_width=True)
 
     st.markdown("---")
-    st.subheader("Actualizar / eliminar servicio")
+    st.subheader("Actualizar / eliminar / editar servicio")
 
     ids = [r["id"] for r in rows]
 
@@ -436,3 +467,114 @@ else:
             delete_appointment(selected_id)
             st.warning("Servicio eliminado.")
             st.rerun()
+
+    # -------- EDITAR SERVICIO COMPLETO --------
+    selected_row = None
+    for r in rows:
+        if r["id"] == selected_id:
+            selected_row = r
+            break
+
+    if selected_row:
+        st.markdown("### ✏️ Editar servicio seleccionado")
+
+        # Convertir fecha y hora desde texto
+        try:
+            fecha_edit = dt.fromisoformat(selected_row["date"]).date()
+        except Exception:
+            try:
+                fecha_edit = dt.strptime(selected_row["date"], "%Y-%m-%d").date()
+            except Exception:
+                fecha_edit = hoy
+
+        try:
+            hora_edit = dt.strptime(selected_row["time"], "%H:%M").time()
+        except Exception:
+            hora_edit = dt.now().time()
+
+        is_monthly_service_current = False
+        if "is_monthly_service" in selected_row.keys() and selected_row["is_monthly_service"] == 1:
+            is_monthly_service_current = True
+
+        with st.form("form_editar_servicio"):
+            col_e1, col_e2, col_e3 = st.columns(3)
+
+            with col_e1:
+                client_name_edit = st.text_input(
+                    "Cliente / Negocio",
+                    value=selected_row["client_name"],
+                )
+                pest_type_edit = st.text_input(
+                    "Tipo de plaga",
+                    value=selected_row["pest_type"] or "",
+                )
+
+            with col_e2:
+                zone_edit = st.text_input(
+                    "Colonia / zona",
+                    value=selected_row["zone"] or "",
+                )
+                address_edit = st.text_input(
+                    "Dirección",
+                    value=selected_row["address"] or "",
+                )
+                phone_edit = st.text_input(
+                    "Teléfono",
+                    value=selected_row["phone"] or "",
+                )
+
+            with col_e3:
+                service_date_edit = st.date_input(
+                    "Fecha del servicio (editar)",
+                    value=fecha_edit,
+                    key="fecha_edit",
+                )
+                service_time_edit = st.time_input(
+                    "Hora del servicio (editar)",
+                    value=hora_edit,
+                    key="hora_edit",
+                )
+                price_edit = st.number_input(
+                    "Precio ($) (editar)",
+                    min_value=0.0,
+                    step=50.0,
+                    value=float(selected_row["price"]) if selected_row["price"] is not None else 0.0,
+                    key="price_edit",
+                )
+                status_edit = st.selectbox(
+                    "Estado (editar)",
+                    ["Pendiente", "Confirmado", "Realizado", "Cobrado"],
+                    index=["Pendiente", "Confirmado", "Realizado", "Cobrado"].index(selected_row["status"]) if selected_row["status"] in ["Pendiente", "Confirmado", "Realizado", "Cobrado"] else 0,
+                    key="status_edit",
+                )
+
+            notes_edit = st.text_area(
+                "Notas (editar)",
+                value=selected_row["notes"] or "",
+            )
+
+            is_monthly_service_edit = st.checkbox(
+                "Servicio mensual (editar)",
+                value=is_monthly_service_current,
+            )
+
+            guardar_cambios = st.form_submit_button("💾 Guardar cambios del servicio")
+
+            if guardar_cambios:
+                update_appointment_full(
+                    appointment_id=selected_id,
+                    client_name=client_name_edit,
+                    service_type=selected_row["service_type"],
+                    pest_type=pest_type_edit,
+                    address=address_edit,
+                    zone=zone_edit,
+                    phone=phone_edit,
+                    fecha=str(service_date_edit),
+                    hora=str(service_time_edit)[:5],
+                    price=price_edit if price_edit > 0 else None,
+                    status=status_edit,
+                    notes=notes_edit,
+                    is_monthly_service=is_monthly_service_edit,
+                )
+                st.success("✅ Servicio actualizado correctamente.")
+                st.rerun()
