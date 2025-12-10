@@ -13,6 +13,8 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
+
+    # Tabla de servicios (ya existente)
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS appointments (
@@ -32,9 +34,29 @@ def init_db():
         );
         """
     )
+
+    # NUEVA tabla de clientes
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS clients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            business_name TEXT,
+            address TEXT,
+            zone TEXT,
+            phone TEXT,
+            notes TEXT
+        );
+        """
+    )
+
     conn.commit()
     conn.close()
 
+
+# ------------------------
+# SERVICIOS (APPOINTMENTS)
+# ------------------------
 
 def add_appointment(
     client_name,
@@ -123,5 +145,40 @@ def delete_appointment(appointment_id):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("DELETE FROM appointments WHERE id = ?", (appointment_id,))
+    conn.commit()
+    conn.close()
+
+
+# ------------------------
+# CLIENTES
+# ------------------------
+
+def add_client(name, business_name, address, zone, phone, notes):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO clients (name, business_name, address, zone, phone, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (name, business_name, address, zone, phone, notes),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_clients():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM clients ORDER BY name;")
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def delete_client(client_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM clients WHERE id = ?;", (client_id,))
     conn.commit()
     conn.close()
