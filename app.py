@@ -267,14 +267,20 @@ init_db()
 st.set_page_config(page_title="Agenda FX 2025", layout="wide")
 st.title("📅 Agenda Fumigaciones Xterminio")
 
-hoy = date.today()
-dia_hoy = hoy.day
-
-# Session state para ediciones
+# Estado para ediciones
 if "cliente_edit_id" not in st.session_state:
     st.session_state["cliente_edit_id"] = None
 if "servicio_edit_id" not in st.session_state:
     st.session_state["servicio_edit_id"] = None
+
+# 🔄 Botón para limpiar todo y recargar
+if st.button("🔄 Actualizar / limpiar pantalla"):
+    st.session_state["cliente_edit_id"] = None
+    st.session_state["servicio_edit_id"] = None
+    st.rerun()
+
+hoy = date.today()
+dia_hoy = hoy.day
 
 # =========================
 # CARGAR CLIENTES
@@ -616,6 +622,11 @@ else:
                     value=is_monthly_service_current,
                 )
 
+                confirmar_eliminar_serv = st.checkbox(
+                    "✅ Confirmar eliminación de este servicio",
+                    key=f"confirm_del_serv_{servicio_edit_id}",
+                )
+
                 col_btn_s1, col_btn_s2 = st.columns(2)
                 with col_btn_s1:
                     guardar_cambios_serv = st.form_submit_button("💾 Guardar cambios del servicio")
@@ -643,10 +654,13 @@ else:
                     st.rerun()
 
                 if eliminar_servicio_btn:
-                    delete_appointment(servicio_edit_id)
-                    st.warning("🗑️ Servicio eliminado correctamente.")
-                    st.session_state["servicio_edit_id"] = None
-                    st.rerun()
+                    if confirmar_eliminar_serv:
+                        delete_appointment(servicio_edit_id)
+                        st.warning("🗑️ Servicio eliminado correctamente.")
+                        st.session_state["servicio_edit_id"] = None
+                        st.rerun()
+                    else:
+                        st.warning("Marca la casilla 'Confirmar eliminación de este servicio' para eliminar.")
 
 # =========================
 # BUSCAR Y EDITAR CLIENTE
@@ -740,6 +754,11 @@ else:
                     value=cliente_encontrado["notes"] or "",
                 )
 
+                confirmar_eliminar_cliente = st.checkbox(
+                    "✅ Confirmar eliminación de este cliente",
+                    key=f"confirm_del_cli_{cliente_edit_id}",
+                )
+
                 col_btn_c1, col_btn_c2 = st.columns(2)
                 with col_btn_c1:
                     guardar_cliente_cambios = st.form_submit_button("💾 Guardar cambios del cliente")
@@ -764,7 +783,10 @@ else:
                         st.rerun()
 
                 if eliminar_cliente_btn:
-                    delete_client(cliente_edit_id)
-                    st.warning("🗑️ Cliente eliminado correctamente.")
-                    st.session_state["cliente_edit_id"] = None
-                    st.rerun()
+                    if confirmar_eliminar_cliente:
+                        delete_client(cliente_edit_id)
+                        st.warning("🗑️ Cliente eliminado correctamente.")
+                        st.session_state["cliente_edit_id"] = None
+                        st.rerun()
+                    else:
+                        st.warning("Marca la casilla 'Confirmar eliminación de este cliente' para eliminar.")
