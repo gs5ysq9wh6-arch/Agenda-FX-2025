@@ -410,15 +410,17 @@ with st.expander("📌 Servicios marcados como mensuales", expanded=False):
         tabla_mensuales = [
             {
                 "ID": r["id"],
-                "Fecha": r["date"],
-                "Hora": r["time"],
-                "Cliente/Negocio": r["client_name"],
-                "Plaga": r["pest_type"],
-                "Zona": r["zone"],
-                "Teléfono": r["phone"],
-                "Precio": r["price"],
-                "Estado": r["status"],
-                "Notas": r["notes"],
+        "Fecha": r["date"],
+        "Hora": r["time"],
+        "Cliente/Negocio": r["client_name"],
+        "Tipo servicio": r["service_type"],
+        "Plaga": r["pest_type"],
+        "Zona": r["zone"],
+        "Dirección": r["address"],
+        "Teléfono": r["phone"],
+        "Precio": r["price"],
+        "Estado": r["status"],
+        "Notas": r["notes"],
             }
             for r in servicios_mensuales
         ]
