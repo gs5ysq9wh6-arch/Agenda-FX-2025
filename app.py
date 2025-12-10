@@ -1,10 +1,178 @@
+import sqlite3
+from datetime import date, timedelta, datetime as dt
+
 import streamlit as st
-from datetime import date, timedelta
 
-import db  # usamos el módulo completo
+# =========================
+# CONFIG DB
+# =========================
+DB_NAME = "agenda.db"
 
-# Inicializar base de datos
-db.init_db()
+
+def get_conn():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
+
+    # Tabla de clientes
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS clients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            business_name TEXT,
+            address TEXT,
+            zone TEXT,
+            phone TEXT,
+            notes TEXT,
+            is_monthly INTEGER DEFAULT 0,
+            monthly_day INTEGER
+        );
+    """)
+
+    # Tabla de servicios
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS appointments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_name TEXT NOT NULL,
+            service_type TEXT,
+            pest_type TEXT,
+            address TEXT,
+            zone TEXT,
+            phone TEXT,
+            date TEXT NOT NULL,
+            time TEXT NOT NULL,
+            price REAL,
+            status TEXT,
+            notes TEXT,
+            created_at TEXT
+        );
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+# ---------- FUNCIONES DB ----------
+
+def add_client(name, business_name, address, zone, phone, notes,
+               is_monthly=False, monthly_day=None):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO clients (
+            name, business_name, address, zone, phone, notes,
+            is_monthly, monthly_day
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        name,
+        business_name,
+        address,
+        zone,
+        phone,
+        notes,
+        1 if is_monthly else 0,
+        monthly_day,
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_clients():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM clients ORDER BY business_name, name;")
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def add_appointment(client_name, service_type, pest_type,
+                    address, zone, phone, fecha, hora,
+                    price, status, notes):
+    conn = get_conn()
+    c = conn.cursor()
+    created_at = dt.now().isoformat(timespec="seconds")
+
+    c.execute("""
+        INSERT INTO appointments (
+            client_name, service_type, pest_type,
+            address, zone, phone,
+            date, time, price,
+            status, notes, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        client_name,
+        service_type,
+        pest_type,
+        address,
+        zone,
+        phone,
+        fecha,
+        hora,
+        price,
+        status,
+        notes,
+        created_at,
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_appointments(date_from=None, date_to=None, status=None):
+    conn = get_conn()
+    c = conn.cursor()
+
+    query = "SELECT * FROM appointments WHERE 1=1"
+    params = []
+
+    if date_from:
+        query += " AND date >= ?"
+        params.append(date_from)
+    if date_to:
+        query += " AND date <= ?"
+        params.append(date_to)
+    if status and status != "Todos":
+        query += " AND status = ?"
+        params.append(status)
+
+    query += " ORDER BY date, time"
+
+    c.execute(query, params)
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def update_status(appointment_id, new_status):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE appointments SET status = ? WHERE id = ?",
+        (new_status, appointment_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_appointment(appointment_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM appointments WHERE id = ?", (appointment_id,))
+    conn.commit()
+    conn.close()
+
+
+# =========================
+# INICIO APP
+# =========================
+init_db()
 
 st.set_page_config(page_title="Agenda FX 2025", layout="wide")
 st.title("📅 Agenda Fumigaciones Xterminio")
@@ -15,7 +183,7 @@ dia_hoy = hoy.day
 # =========================
 # AVISO CLIENTES MENSUALES
 # =========================
-clientes = db.get_clients()
+clientes = get_clients()
 mensuales_hoy = [
     c for c in clientes
     if c["is_monthly"] == 1 and c["monthly_day"] == dia_hoy
@@ -99,7 +267,8 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
         is_monthly = st.checkbox(
             "Cliente con servicio mensual",
             value=bool(cliente_sel["is_monthly"]) if cliente_sel else False,
-        )
+        ) if cliente_sel else st.checkbox("Cliente con servicio mensual", value=False)
+
     with col_m2:
         monthly_day = None
         if is_monthly:
@@ -123,7 +292,7 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
             if not name and not business_name:
                 st.error("Pon al menos el nombre de la persona o del negocio para guardar el cliente.")
             else:
-                db.add_client(
+                add_client(
                     name=name or (business_name or "Cliente sin nombre"),
                     business_name=business_name,
                     address=address,
@@ -144,15 +313,15 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
             if not nombre_mostrar:
                 st.error("Pon al menos el nombre del negocio o de la persona para guardar el servicio.")
             else:
-                db.add_appointment(
+                add_appointment(
                     client_name=nombre_mostrar,
                     service_type="Negocio" if business_name else "Casa",
                     pest_type=pest_type,
                     address=address,
                     zone=zone,
                     phone=phone,
-                    date=str(service_date),
-                    time=str(service_time)[:5],
+                    fecha=str(service_date),
+                    hora=str(service_time)[:5],
                     price=price if price > 0 else None,
                     status=status,
                     notes=notes,
@@ -165,7 +334,7 @@ with st.form("form_servicio_cliente", clear_on_submit=False):
 # =========================
 st.subheader("Clientes mensuales")
 
-clientes = db.get_clients()
+clientes = get_clients()
 mensuales = [c for c in clientes if c["is_monthly"] == 1]
 
 if not mensuales:
@@ -220,7 +389,7 @@ elif filtro_rango == "Próximos 7 días":
     date_from = str(hoy)
     date_to = str(hoy + timedelta(days=7))
 
-rows = db.get_appointments(date_from=date_from, date_to=date_to, status=filtro_estado)
+rows = get_appointments(date_from=date_from, date_to=date_to, status=filtro_estado)
 
 if not rows:
     st.info("No hay servicios con los filtros seleccionados.")
@@ -258,7 +427,7 @@ else:
         )
 
         if st.button("Actualizar estado"):
-            db.update_status(selected_id, new_status)
+            update_status(selected_id, new_status)
             st.success("✅ Estado actualizado.")
             st.rerun()
 
@@ -266,6 +435,6 @@ else:
         st.write("")
         st.write("")
         if st.button("🗑️ Eliminar servicio"):
-            db.delete_appointment(selected_id)
+            delete_appointment(selected_id)
             st.warning("Servicio eliminado.")
             st.rerun()
